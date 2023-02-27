@@ -8,6 +8,8 @@ local Method: {[string]: Method} = {}
 
 local ACTION_PREFIX = "%s %s:"
 
+local ERROR_INVALID_METHOD = "%q is not a valid method"
+
 local ACTION_FAILED = {name = "ACTION_FAILED"; message = "Action %q failed to run!"}
 local ACTION_OVERWRITTEN = {name = "ACTION_OVERWRITTEN"; message = "Actions %q was overwritten"}
 local ACTION_RESERVED = {name = "ACTION_RESERVED"; message = "Action %q is reserved, unable to set"}
@@ -17,9 +19,16 @@ local ACTION_INVALID_METHOD = {name = "ACTION_INVALID_METHOD", message = "Action
 local ACTION_INVALID_TYPE = {name = "ACTION_INVALID_TYPE", message = "Action %q has an invalid type, got %s"}
 local ACTION_INVALID_ICON = {name = "ACTION_INVALID_ICON", message = "Action %q has an invalid icon, got %s"}
 
-local ACTION_NAME_UNDEFINED = "UNDEFINED"
+local TYPE: {[string]: ActionType} = {
+	ACTION = "ACTION";
+	ALERT = "ALERT";
+	WARN = "WARN";
+	BUG = "BUG";
+	ERROR = "ERROR";
+	UNDEFINED = "UNDEFINED";
+}
 
-local ICON = {
+local ICON: {[string]: Emoji} = {
 	ACTION = "👍";
 	ALERT = "🛎️";
 	WARN = "🚨";
@@ -29,6 +38,7 @@ local ICON = {
 }
 
 local _loadedActions: {[string]: Action} = {}
+local _methodCallbacks: {[ActionType]: MethodCallback} = {}
 
 
 --[=[
@@ -85,7 +95,7 @@ local function execute(icon: Emoji, name: ActionName, action: Action?, method: E
 		return Method.ERROR(ACTION_FAILED.name, nil, ACTION_FAILED.message:format(name), response)
 	end
 
-	method(message, response)
+	method(message, response, name)
 end
 
 --[=[
@@ -142,6 +152,9 @@ end
 function Method.ACTION(actionName: ActionName, action: Action?, ...: any)
 	local icon = if action and action.icon then action.icon else ICON.ACTION
 	execute(icon, actionName, action, function(message: ActionInfo, response: {any})
+		if _methodCallbacks[TYPE.ACTION] then
+			_methodCallbacks[TYPE.ACTION](actionName, unpack(response))
+		end
 		print(message, unpack(response))
 	end, ...)
 end
@@ -158,6 +171,9 @@ end
 function Method.ALERT(actionName: ActionName, action: Action?, ...: any)
 	local icon = if action and action.icon then action.icon else ICON.ALERT
 	execute(icon, actionName, action, function(message: ActionInfo, response: {any})
+		if _methodCallbacks[TYPE.ALERT] then
+			_methodCallbacks[TYPE.ALERT](actionName, unpack(response))
+		end
 		warn(message, unpack(response))
 	end, ...)
 end
@@ -173,6 +189,9 @@ end
 ]=]
 function Method.WARN(actionName: ActionName, action: Action?, ...: any)
 	execute(ICON.WARN, actionName, action, function(message: ActionInfo, response: {any})
+		if _methodCallbacks[TYPE.WARN] then
+			_methodCallbacks[TYPE.WARN](actionName, unpack(response))
+		end
 		warn(message, unpack(response))
 	end, ...)
 end
@@ -188,6 +207,9 @@ end
 ]=]
 function Method.BUG(actionName: ActionName, action: Action?, ...: any)
 	execute(ICON.BUG, actionName, action, function(message: ActionInfo, response: {any})
+		if _methodCallbacks[TYPE.BUG] then
+			_methodCallbacks[TYPE.BUG](actionName, unpack(response))
+		end
 		warn(message, unpack(response))
 	end, ...)
 end
@@ -203,6 +225,9 @@ end
 ]=]
 function Method.ERROR(actionName: ActionName, action: Action?, ...: any)
 	execute(ICON.ERROR, actionName, action, function(message: ActionInfo, response: {any})
+		if _methodCallbacks[TYPE.ERROR] then
+			_methodCallbacks[TYPE.ERROR](actionName, unpack(response))
+		end
 		error(message .. " " .. table.concat(response, " "))
 	end, ...)
 end
@@ -217,7 +242,10 @@ end
 	@param ... any
 ]=]
 function Method.UNDEFINED(...: any)
-	execute(ICON.UNDEFINED, ACTION_NAME_UNDEFINED, nil, function(message: ActionInfo, response: {any})
+	execute(ICON.UNDEFINED, TYPE.UNDEFINED, nil, function(message: ActionInfo, response: {any}, actionName: ActionName)
+		if _methodCallbacks[TYPE.UNDEFINED] then
+			_methodCallbacks[TYPE.UNDEFINED](actionName, unpack(response))
+		end
 		warn(message, unpack(response))
 	end, ...)
 end
@@ -289,6 +317,19 @@ function OutputUtil.loadActions(actions: {[string]: Action})
 	for actionName, action in actions do
 		OutputUtil.loadAction(actionName, action)
 	end
+end
+
+--[=[
+	@param method ActionType
+	@param callback MethodCallback
+
+	This sets the callback to the method, so whenever and action
+	is run with that method, it runs the callback.
+]=]
+function OutputUtil.registerMethodCallback(method: ActionType, callback: MethodCallback)
+	local formattedMethod = formatString(method)
+	assert(Method[formattedMethod], ERROR_INVALID_METHOD:format(method))
+	_methodCallbacks[formattedMethod :: ActionType] = callback
 end
 
 --[=[
@@ -368,9 +409,9 @@ type ActionInfo = string
 --[=[
 	@ignore
 	@private
-	@type ExecuteMethod (ActionInfo, {any}) -> ()
+	@type ExecuteMethod (ActionInfo, {any}, ActionName) -> ()
 ]=]
-type ExecuteMethod = (ActionInfo, {any}) -> ()
+type ExecuteMethod = (ActionInfo, {any}, ActionName) -> ()
 
 --[=[
 	@ignore
@@ -378,6 +419,14 @@ type ExecuteMethod = (ActionInfo, {any}) -> ()
 	@type Method (string, Action?, ...any) -> ()
 ]=]
 type Method = (string, Action?, ...any) -> ()
+
+--[=[
+	@type MethodCallback (ActionName, ...any) -> ()
+
+	This is used to add some external functionality to an action method
+	such as logging to an external database when an error occurs.
+]=]
+type MethodCallback = (ActionName, ...any) -> ()
 
 
 
