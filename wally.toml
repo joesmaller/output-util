@@ -1,0 +1,12 @@
+[package]
+name = "joesmaller/output-util"
+description = "Custom output printer that uses actions"
+version = "0.1.0"
+license = "MIT"
+authors = ["Joe Smaller <joe@gluon.games>"]
+realm = "shared"
+registry = "https://github.com/UpliftGames/wally-index"
+
+[dependencies]
+
+[dev-dependencies]
